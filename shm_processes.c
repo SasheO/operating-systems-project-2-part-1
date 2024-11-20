@@ -6,47 +6,42 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <semaphore.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
-void ChildProcess(int*, int*);
-void  ParentProcess(int*, int*);
+void ChildProcess(int*, sem_t*);
+void  ParentProcess(int*, sem_t*);
 void  DepositMoney();
 
 int  main(int  argc, char *argv[]){
   int    BankAcctID;
   int    *BankAcctPtr;
-  int    TurnID;
-  int    *TurnPtr;
   pid_t  pid;
+  sem_t *mutex;
 
-  // provision shared memory for BankAcctID and TurnID, see any errors in allocating shared memory
+  // provision shared memory for BankAcctID, see any errors in allocating shared memory
   BankAcctID = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666);
   if (BankAcctID < 0) {
       printf("*** shmget error ***\n");
       exit(1);
   }
-  TurnID = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666);
-  if (TurnID < 0) {
-      printf("*** shmget error ***\n");
-      exit(1);
-  }
-  printf("Process has received a shared memory of two integers...\n");
 
-  // set BankAcctPtr and TurnPtr pointers to the shared memory provisioned
+    /* create, initialize semaphore */
+  if ((mutex = sem_open("examplesemaphore", O_CREAT, 0644, 1)) == SEM_FAILED) {
+    perror("semaphore initilization");
+    exit(1);
+  }
+
+  // set BankAcctPtr pointer to the shared memory provisioned
   BankAcctPtr = (int *) shmat(BankAcctID, NULL, 0);
   if (*BankAcctPtr == -1) {
       printf("*** shmat error ***\n");
       exit(1);
   }
-  TurnPtr = (int *) shmat(TurnID, NULL, 0);
-  if (*TurnPtr == -1) {
-      printf("*** shmat error ***\n");
-      exit(1);
-  }
-  printf("Process has attached the shared memory...\n");
   
 
   *BankAcctPtr = 0; // initialize value to 0
-  *TurnPtr = 0; // initialize value to 0
 
   printf("Orig Bank Account = %d\n", *BankAcctPtr);
 
@@ -56,26 +51,25 @@ int  main(int  argc, char *argv[]){
       exit(1);
   }
   else if (pid == 0) {
-      ChildProcess(BankAcctPtr, TurnPtr);
+      ChildProcess(BankAcctPtr, mutex);
       // exit(0);
   }
   else{
-    ParentProcess(BankAcctPtr, TurnPtr);
+    ParentProcess(BankAcctPtr, mutex);
   }
 
   return 0;
 }
 
 
-void  ChildProcess(int  *BankAcctPtr, int *TurnPtr){
+void  ChildProcess(int  *BankAcctPtr, sem_t *mutex){
   srandom(time(NULL));
   int sleep_time, account, balance_needed, indx;
   for (indx=0; indx < 25; indx ++){ // loop 25 times as per the lab prompt
     sleep_time = random()%5+1;
     sleep(sleep_time); // sleep random amount of time between 1-5 seconds
-    while(*TurnPtr!=1);  // wait to get lock
+    sem_wait(mutex); // acquire lock/semaphore
     account = *BankAcctPtr; // copy the in BankAccount to a local variable account
-    
     // student tries to withdraw random amount of money if they have enough in their bank account
     balance_needed = random()%50; 
     printf("Poor Student needs $%d\n", balance_needed);
@@ -88,11 +82,11 @@ void  ChildProcess(int  *BankAcctPtr, int *TurnPtr){
     }
 
     * BankAcctPtr = account; // update shared variable BankAcctPtr with locat account variable
-    * TurnPtr = 0; // release lock
+    sem_post(mutex); // release semaphore
   }
 }
 
-void  ParentProcess(int * BankAcctPtr, int *TurnPtr){
+void  ParentProcess(int * BankAcctPtr, sem_t *mutex){
   srandom(time(NULL));
   int sleep_time, indx;
   int * accountPTR;
@@ -101,7 +95,8 @@ void  ParentProcess(int * BankAcctPtr, int *TurnPtr){
     accountPTR = &account; // accountPTR pointer holds the address of account integer (effectively points to accout)
     sleep_time = random()%5+1;
     sleep(sleep_time); // sleep random amount of time between 1-5 seconds
-    while(*TurnPtr!=0); // wait to get lock
+    sem_wait(mutex); // acquire lock/semaphore
+    printf("Dear Old Dad: Attempting to Check Balance\n");
     account = *BankAcctPtr; // copy the in BankAccount to a local variable account
     if (account <= 100){
       DepositMoney(accountPTR); // edits account variable using its pointer
@@ -110,7 +105,7 @@ void  ParentProcess(int * BankAcctPtr, int *TurnPtr){
     else{
       printf("Dear old Dad: Thinks Student has enough Cash ($%d)\n", account);
     }
-    *TurnPtr = 1; // release lock
+    sem_post(mutex); // release semaphore
   }
 }
 
