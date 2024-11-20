@@ -46,7 +46,7 @@ int  main(int  argc, char *argv[]){
   printf("Orig Bank Account = %d\n", *BankAcctPtr);
 
   pid = fork();
-  if (pid < 0) {
+  if (pid < 0) { 
       printf("*** fork error ***\n");
       exit(1);
   }
