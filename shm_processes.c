@@ -1,3 +1,8 @@
+/*
+Authors: Mezisashe Ojuba (sole group member)
+Date: 8 Dec 2024.
+*/
+
 #include  <stdio.h>
 #include  <stdlib.h>
 #include  <sys/types.h>
